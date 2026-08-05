@@ -21,6 +21,7 @@ def run_code(code_name):
 
 if __name__ == "__main__":
 	time_start = time.time()
+	print("Starting program...")
 
 	pipeline = ["database.py", "model.py"]
 	for code in pipeline:
