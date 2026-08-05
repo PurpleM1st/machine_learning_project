@@ -22,7 +22,7 @@ def run_code(code_name):
 if __name__ == "__main__":
 	time_start = time.time()
 
-	pipeline = ["model.py"]
+	pipeline = ["database.py", "model.py"]
 	for code in pipeline:
 		run_code(code)
 
