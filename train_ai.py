@@ -36,14 +36,14 @@ def process_single_image(img):
 
     return np.hstack([hog_feat, hsv_feat]).astype(np.float32)
 
-def extract_features_parallel(image_array, batch_size=400):
+def extract_features_parallel(image_array, batch_size=800):
     """
     Extracts features in parallel across all CPU cores for maximum speed.
     """
     num_samples = len(image_array)
     print(f"Extracting features for {num_samples} images in parallel...")
 
-    features = Parallel(n_jobs=2, batch_size=batch_size)(
+    features = Parallel(n_jobs=-1, batch_size=batch_size)(
         delayed(process_single_image)(img) for img in image_array
     )
     
@@ -118,7 +118,7 @@ def train_and_save():
             probability=False, 
             cache_size=2000, 
             tol=1e-2,
-            max_iter=6000
+            max_iter=8000
         )
         
         svm.fit(X_train_scaled, y_train)
