@@ -4,9 +4,19 @@ import numpy as np
 import joblib
 from skimage.feature import hog
 
+# Map class index (0-4) directly to animal names
+CLASS_MAPPING = {
+    0: "cat",
+    1: "dog",
+    2: "horse",
+    3: "elephant",
+    4: "lion"
+}
+
 def extract_features(img):
     """
-    Extracts HOG + HSV features from a single image (array or filepath).
+    Extracts HOG shape features + HSV color histogram for a single image.
+    Accepts either an image array or a string file path.
     """
     if isinstance(img, str):
         img = cv2.imread(img)
@@ -37,7 +47,7 @@ def extract_features(img):
 
 def predict_an_image(img, model_path="models/trained_svm.pkl"):
     """
-    Predicts the label for a single image (accepts image array or filepath).
+    Predicts the animal name for a single image path or image matrix.
     """
     bundle = joblib.load(model_path)
     scaler = bundle["scaler"]
@@ -46,15 +56,18 @@ def predict_an_image(img, model_path="models/trained_svm.pkl"):
     features = extract_features(img)
     scaled_features = scaler.transform(features)
 
-    predicted_label = svm_model.predict(scaled_features)[0]
-    return predicted_label
+    predicted_id = svm_model.predict(scaled_features)[0]
+    
+    # Map index to string label
+    animal_name = CLASS_MAPPING.get(predicted_id, f"Unknown ({predicted_id})")
+    return animal_name
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Error: Please provide an image path.")
-        print("Usage: python3 predict_script.py <path_to_image>")
+        print("Usage: python3 predict_an_image.py <path_to_image>")
         sys.exit(1)
 
     image_path = sys.argv[1]
-    label = predict_an_image(image_path)
-    print(f"Predicted Label: {label}")
+    animal = predict_an_image(image_path)
+    print(f"Predicted Animal: {animal}")
