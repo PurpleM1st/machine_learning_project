@@ -5,6 +5,7 @@ import cv2
 import gc
 from skimage.feature import hog
 from sklearn.preprocessing import StandardScaler
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 from joblib import Parallel, delayed
@@ -115,11 +116,11 @@ def train_and_save():
             kernel='rbf', 
             C=c, 
             gamma='scale', 
-            probability=False, 
             cache_size=2000, 
             tol=1e-2,
             max_iter=6000
         )
+        CalibratedClassifierCV(SVC(), ensemble=False)
         
         svm.fit(X_train_scaled, y_train)
         
