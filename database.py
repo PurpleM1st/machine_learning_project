@@ -24,6 +24,8 @@ def load_path(path):
 def get_data(path_needed):
 	print(f"Currently checking {path_needed}")
 
+	os.makedirs("cache", exist_ok=True)
+
 	if os.path.exists(f"cache/{path_needed}"):
 		return np.load(f"cache/{path_needed}")
 
