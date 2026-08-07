@@ -12,8 +12,8 @@ from joblib import Parallel, delayed
 CLASS_MAPPING = {
     0: "cat",
     1: "dog",
-    2: "horse",
-    3: "elephant",
+    2: "elephant",
+    3: "horse",
     4: "lion"
 }
 
