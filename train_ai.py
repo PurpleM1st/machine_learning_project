@@ -1,373 +1,844 @@
 import os
 import gc
-<<<<<<< HEAD
-from skimage.feature import hog
-from sklearn.preprocessing import StandardScaler
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report
-from joblib import Parallel, delayed
 
-from database import get_data
-
-
-def process_single_image(img):
-    """
-    Extracts HOG shape features + HSV color histogram for a single image.
-    """
-    img_resized = cv2.resize(img, (128, 128))
-
-    # 1. HOG features (Grayscale shape/edges)
-    gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
-    hog_feat = hog(
-        gray,
-        orientations=9,
-        pixels_per_cell=(16, 16),
-        cells_per_block=(2, 2),
-        block_norm='L2-Hys',
-        visualize=False
-    )
-=======
+import cv2
 import torch
 import torch.nn as nn
 import torch.optim as optim
+
 from torch.utils.data import Dataset, DataLoader
+
 from torchvision import models, transforms
+
 from PIL import Image
+
 import numpy as np
 
 from database import get_data
 
+
 # ---------------------------------------------------------------------
-# 1. Custom Dataset Wrapper for NumPy Arrays
+# Configuration
 # ---------------------------------------------------------------------
+
+TRAIN_DIR = "archive/animals/train"
+VAL_DIR = "archive/animals/val"
+
+MODEL_DIR = "models"
+MODEL_PATH = os.path.join(
+    MODEL_DIR,
+    "best_resnet18.pt"
+)
+
+BATCH_SIZE = 64
+NUM_WORKERS = 4
+
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-2
+
+EPOCHS = 10
+
+
+# ---------------------------------------------------------------------
+# 1. Dataset
+# ---------------------------------------------------------------------
+
 class AnimalDataset(Dataset):
-    def __init__(self, images_array, labels_array, transform=None):
+
+    def __init__(
+        self,
+        images_array,
+        labels_array,
+        transform=None
+    ):
+
         self.images = images_array
         self.labels = labels_array
         self.transform = transform
->>>>>>> refs/remotes/origin/Alex_environment
 
     def __len__(self):
+
         return len(self.labels)
 
     def __getitem__(self, idx):
+
         img = self.images[idx]
-        
-        # Ensure image is uint8 PIL Image for torchvision transforms
+
+        # -------------------------------------------------------------
+        # Images coming from database.py are ALREADY RGB.
+        #
+        # DO NOT use cv2.cvtColor() here.
+        # -------------------------------------------------------------
+
         if isinstance(img, np.ndarray):
+
             if img.dtype != np.uint8:
-                img = img.astype(np.uint8)
-            img = Image.fromarray(img)
 
-<<<<<<< HEAD
+                img = img.astype(
+                    np.uint8
+                )
 
-def extract_features_parallel(image_array, batch_size=1000):
-    """
-    Extracts features in parallel across all CPU cores for maximum speed.
-    """
-    num_samples = len(image_array)
-    print(f"Extracting features for {num_samples} images in parallel...")
+            img = Image.fromarray(
+                img
+            )
 
-    features = Parallel(n_jobs=-1, batch_size=batch_size)(
-        delayed(process_single_image)(img) for img in image_array
-    )
-
-    return np.array(features, dtype=np.float32)
-
-
-def derive_labels_fast(split_name):
-    """
-    Fast label derivation using directory scan instead of slow image opens.
-
-    Returns both the label array and the class_map (folder name -> class id)
-    used to build it, so the mapping can be persisted alongside the model.
-    """
-=======
-        label = torch.tensor(self.labels[idx], dtype=torch.long)
+        label = torch.tensor(
+            self.labels[idx],
+            dtype=torch.long
+        )
 
         if self.transform:
-            img = self.transform(img)
+
+            img = self.transform(
+                img
+            )
 
         return img, label
 
+
 # ---------------------------------------------------------------------
-# 2. Fast Label Derivation
+# 2. Deterministic label generation
 # ---------------------------------------------------------------------
+
 def derive_labels_fast(split_name):
->>>>>>> refs/remotes/origin/Alex_environment
-    path = f"archive/animals/{split_name}"
-    labels = []
-    valid_exts = {".jpg", ".jpeg", ".png", ".bmp"}
 
-    folders = sorted([f.name for f in os.scandir(path) if f.is_dir()])
-    class_map = {folder_name: idx for idx, folder_name in enumerate(folders)}
+    path = os.path.join(
+        "archive",
+        "animals",
+        split_name
+    )
 
-    for folder in folders:
-        sub_path = os.path.join(path, folder)
-        class_id = class_map[folder]
-        for entry in os.scandir(sub_path):
-            if entry.is_file() and os.path.splitext(entry.name)[1].lower() in valid_exts:
-                labels.append(class_id)
+    if not os.path.isdir(path):
 
-<<<<<<< HEAD
-    return np.array(labels, dtype=np.int64), class_map
-
-
-def derive_labels_checked(split_name, image_array):
-    """
-    Wraps derive_labels_fast with a hard check that the directory-scan label
-    order actually lines up with the pre-extracted .npy array. Silently
-    slicing labels to match image_array length (the old `[:len(train_x)]`
-    trick) hides a length mismatch instead of catching it, and a mismatch
-    here means every label could be silently wrong. If the counts don't
-    match exactly, we fail loudly rather than guess.
-    """
-    labels, class_map = derive_labels_fast(split_name)
-
-    if len(labels) != len(image_array):
-        raise ValueError(
-            f"[{split_name}] Label/image count mismatch: "
-            f"found {len(labels)} labels via directory scan but "
-            f"{len(image_array)} images in the .npy array. "
-            f"This almost certainly means the .npy file's image order "
-            f"does not correspond 1:1 with the os.scandir() folder order "
-            f"used here. Do not silently truncate labels to fit — "
-            f"regenerate train_x.npy/val_x.npy with a pipeline that "
-            f"records labels at extraction time, or otherwise confirm "
-            f"the ordering explicitly before training."
+        raise FileNotFoundError(
+            f"Dataset directory not found:\n"
+            f"  {path}"
         )
 
-    return labels, class_map
+    valid_exts = {
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".bmp"
+    }
 
-=======
-    return np.array(labels, dtype=np.int64), len(folders)
->>>>>>> refs/remotes/origin/Alex_environment
+    # -------------------------------------------------------------
+    # IMPORTANT:
+    #
+    # This MUST use the exact same folder ordering as database.py.
+    # -------------------------------------------------------------
+
+    folders = sorted(
+        [
+            f.name
+            for f in os.scandir(path)
+            if f.is_dir()
+        ],
+        key=str.lower
+    )
+
+    class_map = {
+        folder_name: idx
+        for idx, folder_name in enumerate(folders)
+    }
+
+    labels = []
+
+    print(
+        f"\nClass mapping for {split_name}:"
+    )
+
+    for folder_name, class_id in class_map.items():
+
+        print(
+            f"  {class_id} -> {folder_name}"
+        )
+
+        folder_path = os.path.join(
+            path,
+            folder_name
+        )
+
+        # ---------------------------------------------------------
+        # IMPORTANT:
+        #
+        # Same deterministic file ordering as database.py.
+        # ---------------------------------------------------------
+
+        files = sorted(
+            [
+                f
+                for f in os.scandir(folder_path)
+                if (
+                    f.is_file()
+                    and os.path.splitext(
+                        f.name
+                    )[1].lower()
+                    in valid_exts
+                )
+            ],
+            key=lambda f: f.name.lower()
+        )
+
+        labels.extend(
+            [class_id] * len(files)
+        )
+
+    labels = np.array(
+        labels,
+        dtype=np.int64
+    )
+
+    return labels, len(folders), class_map
+
 
 # ---------------------------------------------------------------------
-# 3. Model Definition
+# 3. Model
 # ---------------------------------------------------------------------
-def build_model(num_classes, pretrained=True):
-    # Load backbone pre-trained on ImageNet
-    weights = models.ResNet18_Weights.DEFAULT if pretrained else None
-    model = models.resnet18(weights=weights)
 
-    # Fine-tuning: Replace the final classification head
+def build_model(
+    num_classes,
+    pretrained=True
+):
+
+    if pretrained:
+
+        weights = (
+            models.ResNet18_Weights.DEFAULT
+        )
+
+    else:
+
+        weights = None
+
+    model = models.resnet18(
+        weights=weights
+    )
+
     in_features = model.fc.in_features
+
     model.fc = nn.Sequential(
         nn.Dropout(0.3),
-        nn.Linear(in_features, num_classes)
+        nn.Linear(
+            in_features,
+            num_classes
+        )
     )
+
     return model
 
+
 # ---------------------------------------------------------------------
-# 4. Main Pipeline (Training via Gradient Descent)
+# 4. Main training pipeline
 # ---------------------------------------------------------------------
+
 def train_and_save():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
 
-    print("\n=== Step 1: Loading Data & Deriving Labels ===")
-    train_x = get_data("train_x.npy")
-    val_x = get_data("val_x.npy")
+    # -------------------------------------------------------------
+    # Device
+    # -------------------------------------------------------------
 
-    y_train, num_classes = derive_labels_fast("train")
-    y_val, _ = derive_labels_fast("val")
+    device = torch.device(
+        "cuda"
+        if torch.cuda.is_available()
+        else "cpu"
+    )
 
-<<<<<<< HEAD
-    print("Generating 1D label vectors (y)...")
-    y_train, class_map_train = derive_labels_checked("train", train_x)
-    y_val, class_map_val = derive_labels_checked("val", val_x)
+    print(
+        f"Using device: {device}"
+    )
 
-    if class_map_train != class_map_val:
+    # -------------------------------------------------------------
+    # Load data
+    # -------------------------------------------------------------
+
+    print(
+        "\n=== Step 1: Loading Data ==="
+    )
+
+    train_x = get_data(
+        "train_x.npy"
+    )
+
+    val_x = get_data(
+        "val_x.npy"
+    )
+
+    # -------------------------------------------------------------
+    # Generate labels
+    # -------------------------------------------------------------
+
+    y_train, num_classes, train_class_map = (
+        derive_labels_fast("train")
+    )
+
+    y_val, val_num_classes, val_class_map = (
+        derive_labels_fast("val")
+    )
+
+    # -------------------------------------------------------------
+    # Verify class mappings
+    # -------------------------------------------------------------
+
+    print(
+        "\n=== Checking Class Mappings ==="
+    )
+
+    print(
+        f"Train mapping: {train_class_map}"
+    )
+
+    print(
+        f"Val mapping:   {val_class_map}"
+    )
+
+    if train_class_map != val_class_map:
+
         raise ValueError(
-            "Train and val class_maps disagree — the folder names/order "
-            "under archive/animals/train and archive/animals/val don't "
-            "match, so class indices would not be comparable between "
-            "splits."
+            "\nTRAIN AND VALIDATION CLASS MAPPINGS "
+            "ARE DIFFERENT!\n\n"
+            f"Train: {train_class_map}\n"
+            f"Val:   {val_class_map}"
         )
-    class_map = class_map_train
 
-    print(f"y_train shape: {y_train.shape} | y_val shape: {y_val.shape}")
-    print(f"Class map: {class_map}")
-=======
-    y_train = y_train[:len(train_x)]
-    y_val = y_val[:len(val_x)]
+    if num_classes != val_num_classes:
 
-    print(f"Train samples: {len(train_x)} | Val samples: {len(val_x)} | Classes: {num_classes}")
->>>>>>> refs/remotes/origin/Alex_environment
+        raise ValueError(
+            "Train and validation have different "
+            "numbers of classes."
+        )
 
-    # Data Transforms: Augmentation for Train, Standard Normalization for Val
+    # -------------------------------------------------------------
+    # Verify image/label counts
+    # -------------------------------------------------------------
+
+    print(
+        "\n=== Dataset Sanity Check ==="
+    )
+
+    print(
+        f"Train images: {len(train_x)}"
+    )
+
+    print(
+        f"Train labels: {len(y_train)}"
+    )
+
+    print(
+        f"Val images:   {len(val_x)}"
+    )
+
+    print(
+        f"Val labels:   {len(y_val)}"
+    )
+
+    if len(train_x) != len(y_train):
+
+        raise ValueError(
+            "\nTRAIN IMAGE/LABEL COUNT MISMATCH!\n"
+            f"Images: {len(train_x)}\n"
+            f"Labels: {len(y_train)}\n\n"
+            "Do not continue until this is fixed."
+        )
+
+    if len(val_x) != len(y_val):
+
+        raise ValueError(
+            "\nVALIDATION IMAGE/LABEL COUNT MISMATCH!\n"
+            f"Images: {len(val_x)}\n"
+            f"Labels: {len(y_val)}\n\n"
+            "Do not continue until this is fixed."
+        )
+
+    print(
+        "\nImage and label counts match."
+    )
+
+    # -------------------------------------------------------------
+    # Print class distribution
+    # -------------------------------------------------------------
+
+    print(
+        "\n=== Training Class Distribution ==="
+    )
+
+    for class_name, class_id in train_class_map.items():
+
+        count = int(
+            np.sum(
+                y_train == class_id
+            )
+        )
+
+        print(
+            f"  {class_id} -> "
+            f"{class_name}: "
+            f"{count} images"
+        )
+
+    # -------------------------------------------------------------
+    # Verify NumPy image format
+    # -------------------------------------------------------------
+
+    print(
+        "\n=== Image Format ==="
+    )
+
+    print(
+        f"Train shape: {train_x.shape}"
+    )
+
+    print(
+        f"Train dtype: {train_x.dtype}"
+    )
+
+    print(
+        f"Val shape:   {val_x.shape}"
+    )
+
+    print(
+        f"Val dtype:   {val_x.dtype}"
+    )
+
+    if train_x.ndim != 4:
+
+        raise ValueError(
+            f"Unexpected training shape: "
+            f"{train_x.shape}"
+        )
+
+    if train_x.shape[-1] != 3:
+
+        raise ValueError(
+            "Training images do not have "
+            "3 color channels."
+        )
+
+    # -------------------------------------------------------------
+    # Data transforms
+    # -------------------------------------------------------------
+
+    print(
+        "\n=== Creating Data Transforms ==="
+    )
+
     train_transforms = transforms.Compose([
-        transforms.Resize((224, 224)),
+
+        transforms.Resize(
+            (224, 224)
+        ),
+
         transforms.RandomHorizontalFlip(),
-        transforms.RandomRotation(15),
-        transforms.ColorJitter(brightness=0.2, contrast=0.2),
+
+        transforms.RandomRotation(
+            15
+        ),
+
+        transforms.ColorJitter(
+            brightness=0.2,
+            contrast=0.2
+        ),
+
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+        transforms.Normalize(
+            mean=[
+                0.485,
+                0.456,
+                0.406
+            ],
+            std=[
+                0.229,
+                0.224,
+                0.225
+            ]
+        )
     ])
 
     val_transforms = transforms.Compose([
-        transforms.Resize((224, 224)),
+
+        transforms.Resize(
+            (224, 224)
+        ),
+
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+        transforms.Normalize(
+            mean=[
+                0.485,
+                0.456,
+                0.406
+            ],
+            std=[
+                0.229,
+                0.224,
+                0.225
+            ]
+        )
     ])
 
-    train_dataset = AnimalDataset(train_x, y_train, transform=train_transforms)
-    val_dataset = AnimalDataset(val_x, y_val, transform=val_transforms)
+    # -------------------------------------------------------------
+    # Create datasets
+    # -------------------------------------------------------------
 
-    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+    train_dataset = AnimalDataset(
+        train_x,
+        y_train,
+        transform=train_transforms
+    )
 
-<<<<<<< HEAD
-    print("\n=== Step 4: Training RBF SVM (grid search C x gamma) ===")
+    val_dataset = AnimalDataset(
+        val_x,
+        y_val,
+        transform=val_transforms
+    )
 
-    # Wider, more meaningful grid over both C and gamma.
-    candidate_c_values = [1, 10, 100]
-    candidate_gamma_values = ["scale", 0.001, 0.01, 0.1]
+    # -------------------------------------------------------------
+    # Data loaders
+    # -------------------------------------------------------------
 
-    # Set True if your classes are meaningfully imbalanced (see class counts
-    # printed above / in the classification_report below).
-    use_class_weight_balanced = False
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=torch.cuda.is_available()
+    )
 
-    best_val_acc = -1.0
-    best_model = None
-    best_c = None
-    best_gamma = None
-    best_val_preds = None
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=NUM_WORKERS,
+        pin_memory=torch.cuda.is_available()
+    )
 
-    for c in candidate_c_values:
-        for gamma in candidate_gamma_values:
-            print(f"\n--- Training RBF SVM with C={c}, gamma={gamma} ---")
+    # -------------------------------------------------------------
+    # Model
+    # -------------------------------------------------------------
 
-            model = SVC(
-                kernel='rbf',
-                C=c,
-                gamma=gamma,
-                cache_size=2000,
-                tol=1e-2,
-                max_iter=6000,
-                class_weight="balanced" if use_class_weight_balanced else None,
-            )
-            model.fit(X_train_scaled, y_train)
+    print(
+        "\n=== Step 2: Initializing ResNet-18 ==="
+    )
 
-            val_preds = model.predict(X_val_scaled)
-            val_acc = accuracy_score(y_val, val_preds) * 100
+    model = build_model(
+        num_classes=num_classes,
+        pretrained=True
+    )
 
-            print(f"Results for C={c:<5} gamma={str(gamma):<6} -> Val Acc: {val_acc:.2f}%")
+    model = model.to(device)
 
-            if val_acc > best_val_acc:
-                best_val_acc = val_acc
-                best_model = model
-                best_c = c
-                best_gamma = gamma
-                best_val_preds = val_preds
-            else:
-                del model
+    # -------------------------------------------------------------
+    # Loss
+    # -------------------------------------------------------------
 
-            gc.collect()
-
-    print(f"\n>>> Best Configuration Selected: C={best_c}, gamma={best_gamma} "
-          f"(Validation Accuracy: {best_val_acc:.2f}%) <<<")
-
-    print("\n=== Step 4b: Per-Class Report (checks for class-imbalance issues) ===")
-    target_names = [name for name, _ in sorted(class_map.items(), key=lambda kv: kv[1])]
-    print(classification_report(y_val, best_val_preds, target_names=target_names))
-
-    # Note: probability estimates were dropped along with CalibratedClassifierCV
-    # for runtime cost. If you need predict_proba later, either pass
-    # probability=True to SVC (adds its own overhead via internal 5-fold CV
-    # at fit time) or reintroduce calibration selectively on just the final
-    # chosen model rather than inside the grid search.
-
-    print("\n=== Step 5: Saving Model Bundle ===")
-    os.makedirs("models", exist_ok=True)
-    model_bundle = {
-        "scaler": scaler,
-        "svm": best_model,  # tuned SVC (uncalibrated — see note above)
-        "best_c": best_c,
-        "best_gamma": best_gamma,
-        "image_size": (128, 128),
-        "hog_orientations": 9,
-        "hog_pixels_per_cell": (16, 16),
-        "hog_cells_per_block": (2, 2),
-        "hsv_bins": (16, 16),
-        "class_map": class_map,
-    }
-    joblib.dump(model_bundle, "models/trained_svm.pkl")
-    print("Saved optimal model bundle to 'models/trained_svm.pkl'.")
-=======
-    print("\n=== Step 2: Initializing ResNet-18 Model ===")
-    model = build_model(num_classes=num_classes, pretrained=True).to(device)
-
-    # Loss function and Gradient Descent Optimizer (AdamW)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
 
-    epochs = 10
+    # -------------------------------------------------------------
+    # Optimizer
+    # -------------------------------------------------------------
+
+    optimizer = optim.AdamW(
+        model.parameters(),
+        lr=LEARNING_RATE,
+        weight_decay=WEIGHT_DECAY
+    )
+
+    # -------------------------------------------------------------
+    # Learning-rate scheduler
+    # -------------------------------------------------------------
+
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=EPOCHS
+    )
+
+    # -------------------------------------------------------------
+    # Training settings
+    # -------------------------------------------------------------
+
     best_val_acc = 0.0
 
-    print("\n=== Step 3: Training Loop ===")
-    for epoch in range(epochs):
-        # --- Training Phase ---
+    os.makedirs(
+        MODEL_DIR,
+        exist_ok=True
+    )
+
+    print(
+        "\n=== Step 3: Training ==="
+    )
+
+    # =============================================================
+    # Training loop
+    # =============================================================
+
+    for epoch in range(EPOCHS):
+
+        # ---------------------------------------------------------
+        # TRAIN
+        # ---------------------------------------------------------
+
         model.train()
-        running_loss, correct, total = 0.0, 0, 0
+
+        running_loss = 0.0
+
+        train_correct = 0
+        train_total = 0
 
         for images, labels in train_loader:
-            images, labels = images.to(device), labels.to(device)
 
-            optimizer.zero_grad()            # Clear gradients
-            outputs = model(images)          # Forward pass
-            loss = criterion(outputs, labels) # Calculate loss
-            loss.backward()                  # Backward pass (gradient computation)
-            optimizer.step()                 # Gradient descent step
+            images = images.to(
+                device,
+                non_blocking=True
+            )
 
-            running_loss += loss.item() * images.size(0)
-            _, predicted = outputs.max(1)
-            total += labels.size(0)
-            correct += predicted.eq(labels).sum().item()
+            labels = labels.to(
+                device,
+                non_blocking=True
+            )
+
+            # Clear gradients
+            optimizer.zero_grad()
+
+            # Forward
+            outputs = model(
+                images
+            )
+
+            # Loss
+            loss = criterion(
+                outputs,
+                labels
+            )
+
+            # Backward
+            loss.backward()
+
+            # Gradient descent
+            optimizer.step()
+
+            # -----------------------------------------------------
+            # Statistics
+            # -----------------------------------------------------
+
+            batch_size = images.size(0)
+
+            running_loss += (
+                loss.item()
+                * batch_size
+            )
+
+            _, predicted = outputs.max(
+                1
+            )
+
+            train_total += labels.size(0)
+
+            train_correct += (
+                predicted
+                .eq(labels)
+                .sum()
+                .item()
+            )
 
         scheduler.step()
-        train_acc = (correct / total) * 100
-        train_loss = running_loss / total
 
-        # --- Validation Phase ---
+        train_loss = (
+            running_loss
+            / train_total
+        )
+
+        train_acc = (
+            train_correct
+            / train_total
+            * 100
+        )
+
+        # ---------------------------------------------------------
+        # VALIDATION
+        # ---------------------------------------------------------
+
         model.eval()
-        val_loss, val_correct, val_total = 0.0, 0, 0
+
+        val_running_loss = 0.0
+
+        val_correct = 0
+        val_total = 0
 
         with torch.no_grad():
+
             for images, labels in val_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                loss = criterion(outputs, labels)
 
-                val_loss += loss.item() * images.size(0)
-                _, predicted = outputs.max(1)
+                images = images.to(
+                    device,
+                    non_blocking=True
+                )
+
+                labels = labels.to(
+                    device,
+                    non_blocking=True
+                )
+
+                outputs = model(
+                    images
+                )
+
+                loss = criterion(
+                    outputs,
+                    labels
+                )
+
+                batch_size = images.size(0)
+
+                val_running_loss += (
+                    loss.item()
+                    * batch_size
+                )
+
+                _, predicted = outputs.max(
+                    1
+                )
+
                 val_total += labels.size(0)
-                val_correct += predicted.eq(labels).sum().item()
 
-        val_acc = (val_correct / val_total) * 100
-        epoch_val_loss = val_loss / val_total
+                val_correct += (
+                    predicted
+                    .eq(labels)
+                    .sum()
+                    .item()
+                )
 
-        print(f"Epoch [{epoch+1:02d}/{epochs:02d}] "
-              f"| Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% "
-              f"| Val Loss: {epoch_val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+        val_loss = (
+            val_running_loss
+            / val_total
+        )
 
-        # Save Best Model Checkpoint
+        val_acc = (
+            val_correct
+            / val_total
+            * 100
+        )
+
+        current_lr = optimizer.param_groups[0]["lr"]
+
+        # ---------------------------------------------------------
+        # Print results
+        # ---------------------------------------------------------
+
+        print(
+            f"\nEpoch [{epoch + 1:02d}/{EPOCHS:02d}]"
+        )
+
+        print(
+            f"  Learning Rate: {current_lr:.8f}"
+        )
+
+        print(
+            f"  Train Loss:    {train_loss:.4f}"
+        )
+
+        print(
+            f"  Train Acc:     {train_acc:.2f}%"
+        )
+
+        print(
+            f"  Val Loss:      {val_loss:.4f}"
+        )
+
+        print(
+            f"  Val Acc:       {val_acc:.2f}%"
+        )
+
+        # ---------------------------------------------------------
+        # Save best model
+        # ---------------------------------------------------------
+
         if val_acc > best_val_acc:
+
             best_val_acc = val_acc
-            os.makedirs("models", exist_ok=True)
+
             checkpoint = {
-                "model_state_dict": model.state_dict(),
-                "val_acc": val_acc,
-                "num_classes": num_classes
+
+                "model_state_dict":
+                    model.state_dict(),
+
+                "val_acc":
+                    val_acc,
+
+                "num_classes":
+                    num_classes,
+
+                "class_map":
+                    train_class_map,
+
+                "input_size":
+                    224,
+
+                "mean":
+                    [
+                        0.485,
+                        0.456,
+                        0.406
+                    ],
+
+                "std":
+                    [
+                        0.229,
+                        0.224,
+                        0.225
+                    ]
             }
-            torch.save(checkpoint, "models/best_resnet18.pt")
 
-    print(f"\n>>> Best Validation Accuracy Achieved: {best_val_acc:.2f}% <<<")
-    print("Saved optimal model checkpoint to 'models/best_resnet18.pt'.")
->>>>>>> refs/remotes/origin/Alex_environment
+            torch.save(
+                checkpoint,
+                MODEL_PATH
+            )
 
+            print(
+                f"  *** New best model saved "
+                f"({val_acc:.2f}%) ***"
+            )
+
+    # -------------------------------------------------------------
+    # Final result
+    # -------------------------------------------------------------
+
+    print(
+        "\n" + "=" * 60
+    )
+
+    print(
+        f"BEST VALIDATION ACCURACY: "
+        f"{best_val_acc:.2f}%"
+    )
+
+    print(
+        "=" * 60
+    )
+
+    print(
+        f"Model saved to:\n"
+        f"  {MODEL_PATH}"
+    )
+
+    # -------------------------------------------------------------
+    # Cleanup
+    # -------------------------------------------------------------
+
+    del train_x
+    del val_x
+
+    gc.collect()
+
+    if torch.cuda.is_available():
+
+        torch.cuda.empty_cache()
+
+
+# ---------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------
 
 if __name__ == "__main__":
+
     train_and_save()
