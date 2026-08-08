@@ -1,8 +1,6 @@
-import numpy as np
 import os
-import joblib
-import cv2
 import gc
+<<<<<<< HEAD
 from skimage.feature import hog
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -28,15 +26,40 @@ def process_single_image(img):
         block_norm='L2-Hys',
         visualize=False
     )
+=======
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torchvision import models, transforms
+from PIL import Image
+import numpy as np
 
-    # 2. HSV Color Histogram
-    hsv = cv2.cvtColor(img_resized, cv2.COLOR_BGR2HSV)
-    hist = cv2.calcHist([hsv], [0, 1], None, [16, 16], [0, 180, 0, 256])
-    cv2.normalize(hist, hist, alpha=0, beta=1, norm_type=cv2.NORM_MINMAX)
-    hsv_feat = hist.flatten()
+from database import get_data
 
-    return np.hstack([hog_feat, hsv_feat]).astype(np.float32)
+# ---------------------------------------------------------------------
+# 1. Custom Dataset Wrapper for NumPy Arrays
+# ---------------------------------------------------------------------
+class AnimalDataset(Dataset):
+    def __init__(self, images_array, labels_array, transform=None):
+        self.images = images_array
+        self.labels = labels_array
+        self.transform = transform
+>>>>>>> refs/remotes/origin/Alex_environment
 
+    def __len__(self):
+        return len(self.labels)
+
+    def __getitem__(self, idx):
+        img = self.images[idx]
+        
+        # Ensure image is uint8 PIL Image for torchvision transforms
+        if isinstance(img, np.ndarray):
+            if img.dtype != np.uint8:
+                img = img.astype(np.uint8)
+            img = Image.fromarray(img)
+
+<<<<<<< HEAD
 
 def extract_features_parallel(image_array, batch_size=1000):
     """
@@ -59,6 +82,19 @@ def derive_labels_fast(split_name):
     Returns both the label array and the class_map (folder name -> class id)
     used to build it, so the mapping can be persisted alongside the model.
     """
+=======
+        label = torch.tensor(self.labels[idx], dtype=torch.long)
+
+        if self.transform:
+            img = self.transform(img)
+
+        return img, label
+
+# ---------------------------------------------------------------------
+# 2. Fast Label Derivation
+# ---------------------------------------------------------------------
+def derive_labels_fast(split_name):
+>>>>>>> refs/remotes/origin/Alex_environment
     path = f"archive/animals/{split_name}"
     labels = []
     valid_exts = {".jpg", ".jpeg", ".png", ".bmp"}
@@ -73,6 +109,7 @@ def derive_labels_fast(split_name):
             if entry.is_file() and os.path.splitext(entry.name)[1].lower() in valid_exts:
                 labels.append(class_id)
 
+<<<<<<< HEAD
     return np.array(labels, dtype=np.int64), class_map
 
 
@@ -102,15 +139,41 @@ def derive_labels_checked(split_name, image_array):
 
     return labels, class_map
 
+=======
+    return np.array(labels, dtype=np.int64), len(folders)
+>>>>>>> refs/remotes/origin/Alex_environment
 
+# ---------------------------------------------------------------------
+# 3. Model Definition
+# ---------------------------------------------------------------------
+def build_model(num_classes, pretrained=True):
+    # Load backbone pre-trained on ImageNet
+    weights = models.ResNet18_Weights.DEFAULT if pretrained else None
+    model = models.resnet18(weights=weights)
+
+    # Fine-tuning: Replace the final classification head
+    in_features = model.fc.in_features
+    model.fc = nn.Sequential(
+        nn.Dropout(0.3),
+        nn.Linear(in_features, num_classes)
+    )
+    return model
+
+# ---------------------------------------------------------------------
+# 4. Main Pipeline (Training via Gradient Descent)
+# ---------------------------------------------------------------------
 def train_and_save():
-    print("=== Step 1: Loading Train and Validation Splits ===")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    print("\n=== Step 1: Loading Data & Deriving Labels ===")
     train_x = get_data("train_x.npy")
     val_x = get_data("val_x.npy")
 
-    print(f"Loaded Train X: {train_x.shape}")
-    print(f"Loaded Val X:   {val_x.shape}")
+    y_train, num_classes = derive_labels_fast("train")
+    y_val, _ = derive_labels_fast("val")
 
+<<<<<<< HEAD
     print("Generating 1D label vectors (y)...")
     y_train, class_map_train = derive_labels_checked("train", train_x)
     y_val, class_map_val = derive_labels_checked("val", val_x)
@@ -126,23 +189,36 @@ def train_and_save():
 
     print(f"y_train shape: {y_train.shape} | y_val shape: {y_val.shape}")
     print(f"Class map: {class_map}")
+=======
+    y_train = y_train[:len(train_x)]
+    y_val = y_val[:len(val_x)]
 
-    print("\n=== Step 2: Extracting Features (Parallel HOG + HSV) ===")
-    X_train = extract_features_parallel(train_x)
-    X_val = extract_features_parallel(val_x)
+    print(f"Train samples: {len(train_x)} | Val samples: {len(val_x)} | Classes: {num_classes}")
+>>>>>>> refs/remotes/origin/Alex_environment
 
-    # Free raw pixel RAM
-    del train_x, val_x
-    gc.collect()
+    # Data Transforms: Augmentation for Train, Standard Normalization for Val
+    train_transforms = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(15),
+        transforms.ColorJitter(brightness=0.2, contrast=0.2),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
-    print("\n=== Step 3: Preprocessing (Fitting Scaler ONLY on Train) ===")
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
+    val_transforms = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
 
-    del X_train, X_val
-    gc.collect()
+    train_dataset = AnimalDataset(train_x, y_train, transform=train_transforms)
+    val_dataset = AnimalDataset(val_x, y_val, transform=val_transforms)
 
+    train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
+    val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+
+<<<<<<< HEAD
     print("\n=== Step 4: Training RBF SVM (grid search C x gamma) ===")
 
     # Wider, more meaningful grid over both C and gamma.
@@ -219,6 +295,78 @@ def train_and_save():
     }
     joblib.dump(model_bundle, "models/trained_svm.pkl")
     print("Saved optimal model bundle to 'models/trained_svm.pkl'.")
+=======
+    print("\n=== Step 2: Initializing ResNet-18 Model ===")
+    model = build_model(num_classes=num_classes, pretrained=True).to(device)
+
+    # Loss function and Gradient Descent Optimizer (AdamW)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-2)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+
+    epochs = 10
+    best_val_acc = 0.0
+
+    print("\n=== Step 3: Training Loop ===")
+    for epoch in range(epochs):
+        # --- Training Phase ---
+        model.train()
+        running_loss, correct, total = 0.0, 0, 0
+
+        for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
+
+            optimizer.zero_grad()            # Clear gradients
+            outputs = model(images)          # Forward pass
+            loss = criterion(outputs, labels) # Calculate loss
+            loss.backward()                  # Backward pass (gradient computation)
+            optimizer.step()                 # Gradient descent step
+
+            running_loss += loss.item() * images.size(0)
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+
+        scheduler.step()
+        train_acc = (correct / total) * 100
+        train_loss = running_loss / total
+
+        # --- Validation Phase ---
+        model.eval()
+        val_loss, val_correct, val_total = 0.0, 0, 0
+
+        with torch.no_grad():
+            for images, labels in val_loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+
+                val_loss += loss.item() * images.size(0)
+                _, predicted = outputs.max(1)
+                val_total += labels.size(0)
+                val_correct += predicted.eq(labels).sum().item()
+
+        val_acc = (val_correct / val_total) * 100
+        epoch_val_loss = val_loss / val_total
+
+        print(f"Epoch [{epoch+1:02d}/{epochs:02d}] "
+              f"| Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}% "
+              f"| Val Loss: {epoch_val_loss:.4f} | Val Acc: {val_acc:.2f}%")
+
+        # Save Best Model Checkpoint
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            os.makedirs("models", exist_ok=True)
+            checkpoint = {
+                "model_state_dict": model.state_dict(),
+                "val_acc": val_acc,
+                "num_classes": num_classes
+            }
+            torch.save(checkpoint, "models/best_resnet18.pt")
+
+    print(f"\n>>> Best Validation Accuracy Achieved: {best_val_acc:.2f}% <<<")
+    print("Saved optimal model checkpoint to 'models/best_resnet18.pt'.")
+>>>>>>> refs/remotes/origin/Alex_environment
 
 
 if __name__ == "__main__":
