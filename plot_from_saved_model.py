@@ -10,8 +10,6 @@ from PIL import Image
 # Import data helper from your existing database.py
 from database import get_data
 
-
-# --- DATASET & HELPERS ---
 class AnimalDataset(Dataset):
     def __init__(self, images_array, labels_array, transform=None):
         self.images = images_array
@@ -55,7 +53,7 @@ def derive_labels_fast(split_name):
 
 
 def build_model(num_classes):
-    model = models.resnet18(weights=None)  # Structure only, weights loaded from checkpoint
+    model = models.resnet18(weights=None)  
     in_features = model.fc.in_features
     model.fc = nn.Sequential(
         nn.Dropout(0.3),
@@ -64,7 +62,7 @@ def build_model(num_classes):
     return model
 
 
-# --- EVALUATION FUNCTION ---
+# Evaluates the statistics of the trained model
 def evaluate_dataset(model, data_loader, criterion, device):
     """Calculates overall loss and accuracy for a given dataset loader."""
     model.eval()
@@ -86,7 +84,7 @@ def evaluate_dataset(model, data_loader, criterion, device):
     return avg_loss, acc
 
 
-# --- MAIN EXECUTION ---
+# The main that combines everything, loading, predicting and creating the graphs
 def main():
     model_path = "models/best_resnet18.pt"
     if not os.path.exists(model_path):
