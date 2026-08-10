@@ -177,7 +177,7 @@ def train_and_save():
                 outputs = model(images)
                 loss = criterion(outputs, labels)
 
-                val_loss += loss.item() * images.size(0) # same as before, we calculate the loss
+                val_loss += loss.item() * images.size(0) # same as before, we calculate the
                 _, predicted = outputs.max(1)
                 val_total += labels.size(0)
                 val_correct += predicted.eq(labels).sum().item()
