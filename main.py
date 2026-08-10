@@ -3,7 +3,12 @@ import subprocess
 import sys
 import time
 
+# Running the code and saving logs
 def run_code(code_name):
+	"""
+		Automating the process of running each separate code file,
+		saving the output along the way for easier verification.
+	"""
 	os.makedirs("logs", exist_ok=True)
 	name_without_py = os.path.splitext(code_name)[0]
 	path = os.path.join("logs", f"{name_without_py}.log")
@@ -19,12 +24,19 @@ def run_code(code_name):
 		print(f"{code_name} has run succesfully")
 	
 
+# Start of the runtime
 if __name__ == "__main__":
 	time_start = time.time()
-
-	pipeline = ["model.py"]
-	for code in pipeline:
-		run_code(code)
-
+	# If the model has not been optimized yet,
+	# the database is created and the model is trained on it
+	if not os.path.exists("models/best_resnet18.pt"):
+		print("The model has not been trained")
+		print("Initiate training:")
+		pipeline = ["database.py", "train_ai.py"]
+		for code in pipeline:
+			run_code(code)
+	# Testing part of the model
+	print("The model is ready; testing begins")
+	run_code("test_and_predict_model.py")
 	duration = time.time() - time_start
 	print(f"The runtime lasted {duration:.2f} seconds")
