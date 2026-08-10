@@ -11,8 +11,6 @@ if [ ! -d ".venv" ]; then
     echo "Setup complete!"
 else
     echo "Virtual environment '.venv' already exists."
-	sleep 3
-	clear
 fi
 
 source ./.venv/bin/activate && python3 main.py
