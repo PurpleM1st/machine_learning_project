@@ -8,6 +8,7 @@ from torchvision import models, transforms
 from PIL import Image
 from sklearn.manifold import TSNE
 
+
 try:
     from database import get_data
 except ImportError:
@@ -72,6 +73,7 @@ def build_feature_extractor(model_path, device):
 
 # The main pipeline funtion that calls the others
 def main():
+    os.makedirs("graphs", exist_ok=True)
     model_path = "models/best_resnet18.pt"
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Saved model not found at '{model_path}'. Check path.")
@@ -92,7 +94,7 @@ def main():
     print("[2/5] Loading validation dataset from cache...")
     try:
         val_x = get_data("val_x.npy")
-        from main import derive_labels_fast
+        from train_ai import derive_labels_fast
         y_val, _ = derive_labels_fast("val")
         y_val = y_val[:len(val_x)] # Ensure alignment
         
@@ -138,7 +140,7 @@ def main():
     # 5. Run t-SNE Dimensionality Reduction
     print("[4/5] Running t-SNE reduction (this may take a few minutes)...")
     # Perplexity 30-50 is a good starting point. Lower 'n_iter' if too slow.
-    tsne = TSNE(n_components=2, perplexity=40, n_iter=1000, random_state=42, verbose=1)
+    tsne = TSNE(n_components=2, perplexity=40, max_iter=1000, random_state=42, verbose=1)
     X_embedded = tsne.fit_transform(X) # Shape (N, 2)
 
     # 6. Plotting
@@ -147,7 +149,7 @@ def main():
     plt.style.use('seaborn-v0_8-whitegrid') # Cleaner look for scatter
 
     num_classes = len(class_names) if class_names else len(np.unique(y))
-    cmap = plt.cm.get_cmap('tab10', num_classes) # Qualitative colormap for categories
+    cmap = plt.get_cmap('tab10', num_classes) # Qualitative colormap for categories
 
     # Plot each class individually to build the legend
     for i in range(num_classes):
@@ -169,11 +171,11 @@ def main():
     plt.ylabel("t-SNE Dimension 2")
     plt.grid(True, linestyle='--', alpha=0.5)
 
-    save_path = "resnet18_tsne_clusters.png"
+    save_path = "graphs/resnet18_tsne_clusters.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"[+] Saved t-SNE cluster chart to '{save_path}'")
     
-    plt.show()
+    plt.close()
 
 if __name__ == "__main__":
     main()

@@ -87,6 +87,7 @@ def evaluate_dataset(model, data_loader, criterion, device):
 # The main that combines everything, loading, predicting and creating the graphs
 def main():
     model_path = "models/best_resnet18.pt"
+    os.makedirs("graphs", exist_ok=True)
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Saved model not found at '{model_path}'.")
 
@@ -175,10 +176,10 @@ def main():
                  fontsize=14, fontweight='bold', y=1.02)
     plt.tight_layout()
 
-    save_path = "model_evaluation_chart.png"
+    save_path = "graphs/model_evaluation_chart.png"
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     print(f"[+] Saved evaluation chart to '{save_path}'")
-    plt.show()
+    plt.close()
 
 
 if __name__ == "__main__":

@@ -37,6 +37,9 @@ if __name__ == "__main__":
 			run_code(code)
 	# Testing part of the model
 	print("The model is ready; testing begins")
-	run_code("test_and_predict_model.py")
+	pipeline=["test_and_predict_model.py", "plot_from_saved_model.py", "generate_scatter_plot.py"]
+	for code in pipeline:
+		run_code(code)
+
 	duration = time.time() - time_start
 	print(f"The runtime lasted {duration:.2f} seconds")

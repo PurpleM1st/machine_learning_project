@@ -31,7 +31,7 @@ BATCH_SIZE = 64
 NUM_WORKERS = 4
 
 OUTPUT_CONFUSION_MATRIX = (
-	"models/confusion_matrix.png"
+	"graphs/confusion_matrix.png"
 )
 
 
@@ -367,6 +367,8 @@ def evaluate_test_set(model_path=MODEL_PATH):
 		if torch.cuda.is_available()
 		else "cpu"
 	)
+
+	os.makedirs("graphs", exist_ok=True)
 
 	print(
 		f"Using device: {device}"
